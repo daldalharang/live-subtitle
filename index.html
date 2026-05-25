@@ -1,0 +1,477 @@
+<!-- ==== index.html (GitHub Pages용 단일 파일) ==== -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>실시간 번역 자막</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'Noto Sans KR', sans-serif; }
+    body { display: flex; flex-direction: column; background: #1e1e1e; color: #eee; overflow: hidden; }
+
+    #control-panel {
+      background: #2a2a2a; padding: 10px 14px; border-bottom: 2px solid #444;
+      flex: 0 0 auto; overflow-y: auto; max-height: 45vh;
+    }
+    #control-panel .row {
+      display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 8px;
+    }
+    #control-panel label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #ddd; }
+    #control-panel input[type="number"], #control-panel select {
+      background: #1e1e1e; color: #eee; border: 1px solid #555;
+      border-radius: 4px; padding: 4px 6px; font-size: 13px;
+    }
+    #control-panel input[type="number"] { width: 70px; }
+    #control-panel select { min-width: 110px; }
+    #control-panel input[type="color"] { width: 32px; height: 28px; border: none; background: none; cursor: pointer; }
+    #control-panel button {
+      background: #3a3a3a; color: #eee; border: 1px solid #555;
+      border-radius: 4px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+    }
+    #control-panel button:hover { background: #4a4a4a; }
+    #control-panel button.primary { background: #2563eb; border-color: #2563eb; }
+    #control-panel button.primary:hover { background: #1d4ed8; }
+    #control-panel button.recording { background: #dc2626; border-color: #dc2626; }
+    .status { margin-left: auto; font-size: 12px; color: #aaa; }
+
+    #subtitle-area {
+      flex: 1 1 auto; background: #000; display: flex; align-items: flex-end;
+      justify-content: center; padding: 20px; overflow: hidden;
+    }
+    #subtitle-container {
+      width: 100%; max-height: 100%; overflow: hidden; border-radius: 6px;
+      padding: 12px; transition: background-color .15s;
+    }
+    #subtitles { display: flex; flex-direction: column; gap: 8px; }
+    .subtitle-item { line-height: 1.35; word-break: keep-all; animation: fadeIn .25s ease-out; }
+    .subtitle-item .translation + .translation { margin-top: 2px; }
+    .interim { opacity: 0.55; font-style: italic; margin-top: 6px; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    body.fullscreen-mode #control-panel { display: none; }
+    body.fullscreen-mode #subtitle-area { padding: 10px; }
+  </style>
+</head>
+<body>
+  <div id="control-panel">
+    <div class="row">
+      <button id="btnToggle" class="primary">🎙️ 음성인식 시작</button>
+      <label>마이크 <select id="micSelect"></select></label>
+      <label>원어 <select id="sourceLang"></select></label>
+      <label><input type="checkbox" id="showOriginal" checked> 원어 표시</label>
+      <button id="btnFullscreen">⛶ 전체화면</button>
+      <button id="btnCopy">📋 복사</button>
+    </div>
+    <div class="row">
+      <label>번역어1 <select class="targetLang" data-idx="0"></select></label>
+      <label>번역어2 <select class="targetLang" data-idx="1"></select></label>
+      <label>번역어3 <select class="targetLang" data-idx="2"></select></label>
+      <label>번역어4 <select class="targetLang" data-idx="3"></select></label>
+    </div>
+    <div class="row">
+      <label>자막수 <input type="number" id="maxSubtitles" min="1" max="20" value="3"></label>
+      <label>글자크기 <input type="number" id="fontSize" min="10" max="120" value="42">px</label>
+      <label>글자색 <input type="color" id="textColor" value="#FFFFFF"></label>
+      <label>배경색 <input type="color" id="bgColor" value="#000000"></label>
+      <label>배경 투명도 <input type="range" id="bgAlpha" min="0" max="1" step="0.05" value="0.8"></label>
+    </div>
+    <div class="row">
+      <label>정렬
+        <select id="align">
+          <option value="left">왼쪽</option>
+          <option value="center" selected>가운데</option>
+          <option value="right">오른쪽</option>
+        </select>
+      </label>
+      <label>폰트
+        <select id="fontFamily">
+          <option value="'Noto Sans KR', sans-serif">Noto Sans KR</option>
+          <option value="'Malgun Gothic', sans-serif">맑은 고딕</option>
+          <option value="'Nanum Gothic', sans-serif">나눔고딕</option>
+          <option value="'Pretendard', sans-serif">Pretendard</option>
+          <option value="Arial, sans-serif">Arial</option>
+          <option value="'Times New Roman', serif">Times New Roman</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="outline" checked> 외곽선</label>
+      <label>외곽선 두께 <input type="number" id="outlineWidth" min="0" max="10" value="2">px</label>
+      <label>자막폭 <input type="number" id="width" min="20" max="100" value="100">%</label>
+      <label>표시지연 <input type="number" id="delay" min="0" max="10" step="0.1" value="0">초</label>
+    </div>
+    <div class="row">
+      <button id="btnApply" class="primary">✓ 적용</button>
+      <button id="btnSave">💾 저장</button>
+      <button id="btnReload">↻ 불러오기</button>
+      <span id="status" class="status">대기 중</span>
+    </div>
+  </div>
+
+  <div id="subtitle-area">
+    <div id="subtitle-container">
+      <div id="subtitles"></div>
+      <div id="interim" class="interim"></div>
+    </div>
+  </div>
+
+<script>
+/* ============================================================
+ * ★★★ 이 부분 한 줄만 본인 Apps Script 웹앱 URL로 교체하세요 ★★★
+ * 형식: https://script.google.com/macros/s/AKfyc.../exec
+ * ============================================================ */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxgvhr8IcgVDkW1C1IMvkrZuBdW-8mF4HpyggDmAZ_Mw8kkZzlrG4Ctec-XVzTGnl2ThQ/exec';
+
+/* ============================================================
+ * GAS 호출 헬퍼
+ * ----------------------------------------------------------------
+ * Content-Type을 일부러 'text/plain'으로 두는 이유:
+ *  - 'application/json'으로 보내면 브라우저가 CORS preflight(OPTIONS)
+ *    요청을 먼저 보내는데, Apps Script는 OPTIONS를 처리하지 못합니다.
+ *  - text/plain은 simple request로 간주되어 preflight 없이 바로 POST 됩니다.
+ *  - 서버 측 doPost에서는 어차피 JSON.parse(e.postData.contents)로 처리합니다.
+ * ============================================================ */
+async function gasCall(action, payload) {
+  payload = payload || {};
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ action: action }, payload)),
+    redirect: 'follow'
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'GAS error');
+  return json.data;
+}
+
+/* ---------- 지원 언어 ---------- */
+const LANGS = [
+  { code: 'ko', bcp47: 'ko-KR', name: '한국어' },
+  { code: 'en', bcp47: 'en-US', name: '영어' },
+  { code: 'ja', bcp47: 'ja-JP', name: '일본어' },
+  { code: 'zh-CN', bcp47: 'zh-CN', name: '중국어(간체)' },
+  { code: 'zh-TW', bcp47: 'zh-TW', name: '중국어(번체)' },
+  { code: 'es', bcp47: 'es-ES', name: '스페인어' },
+  { code: 'fr', bcp47: 'fr-FR', name: '프랑스어' },
+  { code: 'de', bcp47: 'de-DE', name: '독일어' },
+  { code: 'vi', bcp47: 'vi-VN', name: '베트남어' },
+  { code: 'th', bcp47: 'th-TH', name: '태국어' },
+  { code: 'ru', bcp47: 'ru-RU', name: '러시아어' },
+  { code: 'id', bcp47: 'id-ID', name: '인도네시아어' },
+];
+
+let recognition = null;
+let isRecognizing = false;
+let manualStop = false;
+let selectedMicId = null;
+
+window.addEventListener('DOMContentLoaded', async () => {
+  populateLanguageDropdowns();
+  await populateMicList();
+  bindUIEvents();
+  loadSettingsFromServer();
+});
+
+function populateLanguageDropdowns() {
+  const src = document.getElementById('sourceLang');
+  LANGS.forEach(l => src.add(new Option(l.name, l.code)));
+  src.value = 'ko';
+  document.querySelectorAll('.targetLang').forEach((sel, idx) => {
+    sel.add(new Option('-- 사용 안 함 --', 'OFF'));
+    LANGS.forEach(l => sel.add(new Option(l.name, l.code)));
+    sel.value = idx === 0 ? 'en' : idx === 1 ? 'ja' : 'OFF';
+  });
+}
+
+async function populateMicList() {
+  const micSel = document.getElementById('micSelect');
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    devices.filter(d => d.kind === 'audioinput').forEach(d => {
+      micSel.add(new Option(d.label || `마이크 (${d.deviceId.slice(0,6)})`, d.deviceId));
+    });
+    selectedMicId = micSel.value;
+  } catch (e) {
+    micSel.add(new Option('(권한 거부됨)', ''));
+    console.warn('마이크 목록 가져오기 실패:', e);
+  }
+  micSel.addEventListener('change', () => { selectedMicId = micSel.value; });
+}
+
+function getSpeechRecognitionClass() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function getSourceBcp47() {
+  const code = document.getElementById('sourceLang').value;
+  const lang = LANGS.find(l => l.code === code);
+  return lang ? lang.bcp47 : 'ko-KR';
+}
+
+function initRecognition() {
+  const SR = getSpeechRecognitionClass();
+  if (!SR) {
+    alert('이 브라우저는 Web Speech API를 지원하지 않습니다. Chrome을 사용해주세요.');
+    return null;
+  }
+  const rec = new SR();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+  rec.lang = getSourceBcp47();
+  rec.onresult = onSpeechResult;
+  rec.onerror = (e) => {
+    console.warn('SpeechRecognition error:', e.error);
+    setStatus('오류: ' + e.error);
+  };
+  rec.onend = () => {
+    if (isRecognizing && !manualStop) {
+      try { rec.start(); } catch (e) {}
+    } else {
+      setStatus('정지');
+    }
+  };
+  return rec;
+}
+
+async function startRecognition() {
+  if (selectedMicId) {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: selectedMicId } } });
+    } catch (e) { console.warn('지정 마이크 활성화 실패:', e); }
+  }
+  recognition = initRecognition();
+  if (!recognition) return;
+  manualStop = false;
+  isRecognizing = true;
+  try {
+    recognition.start();
+    setStatus('🎙️ 인식 중');
+    const btn = document.getElementById('btnToggle');
+    btn.textContent = '⏹ 음성인식 정지';
+    btn.classList.add('recording');
+  } catch (e) {
+    console.error(e);
+    isRecognizing = false;
+  }
+}
+
+function stopRecognition() {
+  manualStop = true;
+  isRecognizing = false;
+  if (recognition) { try { recognition.stop(); } catch (e) {} }
+  const btn = document.getElementById('btnToggle');
+  btn.textContent = '🎙️ 음성인식 시작';
+  btn.classList.remove('recording');
+  document.getElementById('interim').textContent = '';
+  setStatus('정지됨');
+}
+
+function onSpeechResult(event) {
+  let interim = '';
+  const finals = [];
+  for (let i = event.resultIndex; i < event.results.length; i++) {
+    const t = event.results[i][0].transcript;
+    if (event.results[i].isFinal) finals.push(t.trim());
+    else interim += t;
+  }
+  document.getElementById('interim').textContent = interim;
+  finals.forEach(text => { if (text) handleFinalText(text); });
+}
+
+async function handleFinalText(text) {
+  const sourceLang = document.getElementById('sourceLang').value;
+  const targets = Array.from(document.querySelectorAll('.targetLang'))
+                       .map(s => s.value).filter(v => v && v !== 'OFF');
+  document.getElementById('interim').textContent = '';
+
+  if (targets.length === 0) {
+    addSubtitle(text, {});
+    return;
+  }
+
+  setStatus('번역 중...');
+  try {
+    const translations = await gasCall('translate', {
+      text: text, sourceLang: sourceLang, targetLangs: targets
+    });
+    addSubtitle(text, translations);
+    setStatus(isRecognizing ? '🎙️ 인식 중' : '정지');
+    // 로그는 비동기로(결과 무시)
+    gasCall('log', { original: text, translations: translations }).catch(err => {
+      console.warn('로그 기록 실패:', err);
+    });
+  } catch (err) {
+    console.error('번역 실패:', err);
+    setStatus('번역 실패: ' + err.message);
+    addSubtitle(text, { error: '[번역 실패]' });
+  }
+}
+
+function addSubtitle(original, translations) {
+  const delaySec = parseFloat(document.getElementById('delay').value) || 0;
+  setTimeout(() => doAddSubtitle(original, translations), delaySec * 1000);
+}
+
+function doAddSubtitle(original, translations) {
+  const box = document.getElementById('subtitles');
+  const showOriginal = document.getElementById('showOriginal').checked;
+  const item = document.createElement('div');
+  item.className = 'subtitle-item';
+  let html = '';
+  if (showOriginal) html += `<div class="original">${escapeHtml(original)}</div>`;
+  Object.keys(translations).forEach(lang => {
+    html += `<div class="translation">${escapeHtml(translations[lang])}</div>`;
+  });
+  item.innerHTML = html;
+  box.appendChild(item);
+  const max = parseInt(document.getElementById('maxSubtitles').value) || 3;
+  while (box.children.length > max) box.removeChild(box.firstChild);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function applyStyles() {
+  const fontSize = document.getElementById('fontSize').value;
+  const textColor = document.getElementById('textColor').value;
+  const bgColor = document.getElementById('bgColor').value;
+  const bgAlpha = parseFloat(document.getElementById('bgAlpha').value);
+  const align = document.getElementById('align').value;
+  const fontFamily = document.getElementById('fontFamily').value;
+  const outline = document.getElementById('outline').checked;
+  const outlineWidth = parseInt(document.getElementById('outlineWidth').value) || 0;
+  const width = parseInt(document.getElementById('width').value) || 100;
+
+  const c = document.getElementById('subtitle-container');
+  c.style.width = width + '%';
+  c.style.backgroundColor = hexToRgba(bgColor, bgAlpha);
+  c.style.color = textColor;
+  c.style.fontSize = fontSize + 'px';
+  c.style.textAlign = align;
+  c.style.fontFamily = fontFamily;
+  if (outline && outlineWidth > 0) {
+    const w = outlineWidth;
+    c.style.textShadow =
+      `-${w}px -${w}px 0 #000, ${w}px -${w}px 0 #000, ` +
+      `-${w}px  ${w}px 0 #000, ${w}px  ${w}px 0 #000, ` +
+      `0 -${w}px 0 #000, 0 ${w}px 0 #000, ` +
+      `-${w}px 0 0 #000, ${w}px 0 0 #000`;
+  } else c.style.textShadow = 'none';
+  if (recognition) recognition.lang = getSourceBcp47();
+}
+
+function hexToRgba(hex, alpha) {
+  const m = hex.replace('#', '');
+  const r = parseInt(m.substring(0, 2), 16);
+  const g = parseInt(m.substring(2, 4), 16);
+  const b = parseInt(m.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function gatherSettings() {
+  return {
+    sourceLang: document.getElementById('sourceLang').value,
+    targetLangs: Array.from(document.querySelectorAll('.targetLang')).map(s => s.value),
+    showOriginal: document.getElementById('showOriginal').checked,
+    maxSubtitles: parseInt(document.getElementById('maxSubtitles').value),
+    fontSize: parseInt(document.getElementById('fontSize').value),
+    textColor: document.getElementById('textColor').value,
+    bgColor: document.getElementById('bgColor').value,
+    bgAlpha: parseFloat(document.getElementById('bgAlpha').value),
+    align: document.getElementById('align').value,
+    fontFamily: document.getElementById('fontFamily').value,
+    outline: document.getElementById('outline').checked,
+    outlineWidth: parseInt(document.getElementById('outlineWidth').value),
+    width: parseInt(document.getElementById('width').value),
+    delay: parseFloat(document.getElementById('delay').value),
+  };
+}
+
+function applySettingsToUI(s) {
+  if (!s || Object.keys(s).length === 0) return;
+  if (s.sourceLang) document.getElementById('sourceLang').value = s.sourceLang;
+  if (Array.isArray(s.targetLangs)) {
+    document.querySelectorAll('.targetLang').forEach((sel, i) => {
+      if (s.targetLangs[i] !== undefined) sel.value = s.targetLangs[i] || 'OFF';
+    });
+  }
+  if (typeof s.showOriginal === 'boolean') document.getElementById('showOriginal').checked = s.showOriginal;
+  if (s.maxSubtitles) document.getElementById('maxSubtitles').value = s.maxSubtitles;
+  if (s.fontSize) document.getElementById('fontSize').value = s.fontSize;
+  if (s.textColor) document.getElementById('textColor').value = s.textColor;
+  if (s.bgColor) document.getElementById('bgColor').value = s.bgColor;
+  if (s.bgAlpha !== undefined) document.getElementById('bgAlpha').value = s.bgAlpha;
+  if (s.align) document.getElementById('align').value = s.align;
+  if (s.fontFamily) document.getElementById('fontFamily').value = s.fontFamily;
+  if (typeof s.outline === 'boolean') document.getElementById('outline').checked = s.outline;
+  if (s.outlineWidth !== undefined) document.getElementById('outlineWidth').value = s.outlineWidth;
+  if (s.width) document.getElementById('width').value = s.width;
+  if (s.delay !== undefined) document.getElementById('delay').value = s.delay;
+  applyStyles();
+}
+
+async function saveSettingsToServer() {
+  setStatus('저장 중...');
+  try {
+    await gasCall('save', { settings: gatherSettings() });
+    setStatus('✔ 저장됨');
+  } catch (err) { setStatus('저장 실패: ' + err.message); }
+}
+
+async function loadSettingsFromServer() {
+  setStatus('설정 불러오는 중...');
+  try {
+    const s = await gasCall('load');
+    applySettingsToUI(s);
+    setStatus('✔ 설정 로드 완료');
+  } catch (err) {
+    console.warn('설정 로드 실패:', err);
+    applyStyles();
+    setStatus('기본 설정 사용 (' + err.message + ')');
+  }
+}
+
+function toggleFullscreen() {
+  document.body.classList.toggle('fullscreen-mode');
+  if (document.body.classList.contains('fullscreen-mode')) {
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  } else if (document.fullscreenElement) {
+    document.exitFullscreen();
+  }
+}
+
+function copySubtitles() {
+  const items = document.querySelectorAll('#subtitles .subtitle-item');
+  const text = Array.from(items).map(it => it.innerText).join('\n\n');
+  navigator.clipboard.writeText(text).then(
+    () => setStatus('✔ 복사됨'),
+    () => setStatus('복사 실패')
+  );
+}
+
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+
+function bindUIEvents() {
+  document.getElementById('btnToggle').addEventListener('click', () => {
+    if (isRecognizing) stopRecognition(); else startRecognition();
+  });
+  document.getElementById('btnApply').addEventListener('click', applyStyles);
+  document.getElementById('btnSave').addEventListener('click', saveSettingsToServer);
+  document.getElementById('btnReload').addEventListener('click', loadSettingsFromServer);
+  document.getElementById('btnFullscreen').addEventListener('click', toggleFullscreen);
+  document.getElementById('btnCopy').addEventListener('click', copySubtitles);
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) document.body.classList.remove('fullscreen-mode');
+  });
+}
+</script>
+</body>
+</html>
